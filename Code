@@ -1,0 +1,138 @@
+import numpy as np
+import pandas as pd
+import datetime as dt
+
+
+employee_survey_data=pd.read_csv('employee_survey_data.csv')
+
+general_data=pd.read_csv('general_data.csv')
+
+manager_survey_data=pd.read_csv('manager_survey_data.csv')
+
+in_time=pd.read_csv('in_time.csv')
+
+out_time=pd.read_csv('out_time.csv')
+
+
+#Checking the primary key(emp_id) is unique
+
+employee_survey_data.nunique()
+general_data.nunique()
+manager_survey_data.nunique()
+in_time.nunique()
+out_time.nunique()
+
+
+
+#employee in_time and Out_time exploring
+Timing=pd.merge(in_time,out_time,on='EmployeeID')
+
+order_y = [col for col in Timing.columns.tolist() if col.endswith('_y')]
+
+
+order_x= [col for col in Timing.columns.tolist() if col.endswith('_x')]
+
+order_z = [col for col in in_time.columns.tolist() if not (col == 'EmployeeID')]
+
+
+Timing[order_x]=Timing[order_x].apply(pd.to_datetime)
+Timing[order_y]=Timing[order_y].apply(pd.to_datetime)
+       
+
+for i in range(len(order_x)):
+    col1=order_x[i]
+    col2=order_y[i]
+    Timing[col2+'diff']=Timing[col2]-Timing[col1]
+    
+order_diff= [col for col in Timing.columns.tolist() if col.endswith('diff') |(col == 'EmployeeID')]
+
+worked_hrs=Timing[order_diff].dropna(how='all',axis=1)
+
+
+
+worked_hrs=worked_hrs.set_index('EmployeeID')
+
+worked_hrs['Mean_worked_time']=worked_hrs.mean(axis=1)
+
+worked_hrs=worked_hrs.reset_index()
+
+hrs_worked=worked_hrs[['EmployeeID','Mean_worked_time']]
+
+hrs_worked['Mean_worked_time']=(hrs_worked['Mean_worked_time'].dt.seconds)/3600
+
+conditions = [
+    (hrs_worked['Mean_worked_time']>7) & (hrs_worked['Mean_worked_time'] <=8),    
+    (hrs_worked['Mean_worked_time'] >8)]
+choices = ['Regular','Overtime']
+hrs_worked['Emp_Login_catalogue'] = np.select(conditions, choices, default = 'Early logout')
+
+data=pd.merge(general_data,hrs_worked,on='EmployeeID',how='left')
+
+data['TotalWorkingYears']=data['TotalWorkingYears'].replace(np.nan,data['YearsAtCompany'])
+
+data['NumCompaniesWorked']=data['NumCompaniesWorked'].replace(np.nan,0)
+
+data=pd.merge(data,manager_survey_data,on='EmployeeID',how='left')
+
+data=pd.merge(data,employee_survey_data,on='EmployeeID',how='left')
+
+train=[col for col in data.columns.values if not 'Attrition' in col]
+
+data=data.replace(np.nan,0)
+
+
+x= data[train].values
+y=data['Attrition'].values
+
+
+from sklearn.preprocessing import LabelEncoder
+labelencoder = LabelEncoder()
+x[:,1]=labelencoder.fit_transform(x[:,1])
+x[:,2]=labelencoder.fit_transform(x[:,2])
+x[:,5]=labelencoder.fit_transform(x[:,5])
+x[:,8]=labelencoder.fit_transform(x[:,8])
+x[:,10]=labelencoder.fit_transform(x[:,10])
+x[:,11]=labelencoder.fit_transform(x[:,11])
+x[:,14]=labelencoder.fit_transform(x[:,14])
+x[:,24]=labelencoder.fit_transform(x[:,24])
+
+from sklearn.model_selection import train_test_split
+x_train,x_test,y_train,y_test=train_test_split(x,y,test_size=0.4,random_state=0)
+
+from sklearn.preprocessing import StandardScaler
+sc = StandardScaler()
+x_train =sc.fit_transform(x_train)
+x_test =sc.transform(x_test)
+#######################################################
+from sklearn.linear_model import LogisticRegression
+lr = LogisticRegression()
+lr.fit(x_train,y_train)
+y_pred_lr = lr.predict(x_test)
+
+
+from sklearn.metrics import confusion_matrix
+cm_lr = confusion_matrix(y_pred_lr,y_test)
+accuracy_lr = (cm_lr[0,0]+cm_lr[1,1])/(cm_lr[0,0]+cm_lr[0,1]+cm_lr[1,0]+cm_lr[1,1])
+accuracy_lr
+
+##########################################
+from sklearn.neighbors import KNeighborsClassifier
+KNN_classifier = KNeighborsClassifier(n_neighbors=5,metric='minkowski',p=2)
+KNN_classifier.fit(x_train,y_train)
+
+y_pred_knn =KNN_classifier.predict(x_test)
+
+
+cm_knn = confusion_matrix(y_pred_knn,y_test)
+accuracy_knn = (cm_knn[0,0]+cm_knn[1,1])/(cm_knn[0,0]+cm_knn[0,1]+cm_knn[1,0]+cm_knn[1,1])
+accuracy_knn
+##########################################
+from sklearn.tree import DecisionTreeClassifier
+decisiontreeclassifier = DecisionTreeClassifier(criterion='entropy',random_state=123)
+decisiontreeclassifier.fit(x_train,y_train)
+y_pred_dtc = decisiontreeclassifier.predict(x_test)
+
+cm_dtc = confusion_matrix(y_pred_dtc,y_test)
+accuracy_dtc = (cm_dtc[0,0]+cm_dtc[1,1])/(cm_dtc[0,0]+cm_dtc[0,1]+cm_dtc[1,0]+cm_dtc[1,1])
+accuracy_dtc
+#############################################
